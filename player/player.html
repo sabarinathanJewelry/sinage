@@ -1,0 +1,170 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>SJ Player</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    /* === global reset & viewport fill ==================================== */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: #000;          /* black bars if media isn’t 16:9 */
+  overflow: hidden;          /* hide scrollbars on tiny screens */
+  font-family: sans-serif;   /* (optional) fallback font */
+}
+
+/* === main grid that JS writes to ===================================== */
+#grid {
+  display: grid;
+  /* 1 × 2 layout by default; JS can overwrite these rows/cols */
+  grid-template-rows: 1fr;
+  grid-template-columns: minmax(210px, 1fr)  /* left ≥210 px */
+                         2.3fr;               /* right gets the rest */
+  width: 100%;
+  height: 100vh;          /* take full viewport height */
+}
+
+/* === generic wrapper for every zone ================================== */
+.zone-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;       /* crop anything outside the cell */
+}
+
+/* === media elements – img, video, etc. =============================== */
+.zone-wrap img,
+.zone-wrap video {
+  position: absolute;
+  inset: 0;               /* shorthand: top/left/right/bottom = 0 */
+  width: 100%;
+  height: 100%;
+  object-fit: cover;      /* fill the cell and crop overflow     */
+  object-position: center;
+}
+
+/* === portrait fallback (e.g. vertical TV or rotated browser) ========= */
+@media (orientation: portrait) {
+  #grid {
+    grid-template-columns: 1fr;   /* single column */
+    grid-template-rows: 40% 60%;  /* poster on top, image/video below */
+  }
+
+  @keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.fade-in {
+  animation: fadeIn .8s ease-out forwards;
+}
+}
+</style>
+</head>
+<body>
+  <div id="grid"></div>
+  <script type="module">
+  import { createClient } from
+    "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
+
+  /* ───🔧 YOUR CREDENTIALS ─────────────────────────────────────── */
+  const SUPABASE_URL  = "https://pdwsunqsqfumshbmmveo.supabase.co";     // 🔧
+  const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBkd3N1bnFzcWZ1bXNoYm1tdmVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI1NjU4MTMsImV4cCI6MjA2ODE0MTgxM30.mQRG5drm-p5fQiGRUrYO5MQ_q3sGtYYYoPYcBaE9LJw";           // 🔧
+  /* ────────────────────────────────────────────────────────────── */
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
+
+const slug = location.pathname.split("/").pop().toLowerCase() || "main";
+
+const { data: screenRow, error: fetchError } = await supabase
+  .from("screens")
+  .select("id")
+  .eq("name", slug)
+  .single();
+
+if (fetchError || !screenRow) {
+  console.error("Fetch error:", fetchError);
+  throw new Error("Invalid screen slug");
+}
+const screenId = screenRow.id; 
+    const grid = document.getElementById("grid");
+
+    /* fetch once */
+    const { data: raw } = await supabase
+          .rpc("get_screen_playlist", { p_screen: screenId });
+
+    let screen = raw;
+    if (Array.isArray(raw)) {
+      const firstKey = Object.keys(raw[0])[0];
+      screen = raw[0][firstKey];
+    }
+
+   if (!screen || !screen.zones?.length) {
+  throw new Error("No playlist linked to this screen");
+   }
+
+  const layout = screen.layout;
+  const zones  = screen.zones.reduce((acc, z) => {
+      (acc[z.zone] ||= []).push(z);
+      return acc;
+   }, {});
+
+  /* grid skeleton */
+  grid.style.display = "grid";
+  grid.style.gridTemplateRows    = `repeat(${layout.rows}, 1fr)`;
+  grid.style.gridTemplateColumns = layout.templateColumns.join(" ");
+
+  // wrapper per cell
+  const cell = {};
+  function wrapper(r,c) {
+    const key = `${r}-${c}`;
+    if (!cell[key]) {
+      const div = document.createElement("div");
+      Object.assign(div.style, {
+        position:"relative", width:"100%",height:"100%",overflow:"hidden",
+        gridRow:r, gridColumn:c
+      });
+      grid.appendChild(div);
+      cell[key] = div;
+    }
+    return cell[key];
+  }
+
+  /* start a loop per zone */
+  Object.entries(zones).forEach(([zoneNum, list]) => {
+    const meta = layout.zones[zoneNum - 1];          // 1‑based to 0‑idx
+    let i = 0;
+
+  function show() {
+      const z     = list[i];
+      const parent = wrapper(meta.r, meta.c);
+      parent.innerHTML = "";                      // clear previous
+
+      const el = document.createElement(z.type === "video" ? "video" : "img");
+      el.src   = z.url;
+      if (z.type === "video") { el.autoplay = true; el.muted = true; }
+
+      Object.assign(el.style, {
+        position:"absolute", inset:0,
+        width:"100%", height:"100%",
+        objectFit:"cover", objectPosition:"center"
+      });
+
+      el.classList.add("fade-in");                // ← ★ new line
+      parent.appendChild(el);
+
+      i = (i + 1) % list.length;
+      if (list.length > 1)
+        setTimeout(show, (z.dur || 10) * 1000);
+  
+      }
+
+    show();                           // kick off zone
+  });
+</script>
+</body>
+</html>
