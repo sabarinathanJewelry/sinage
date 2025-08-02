@@ -1,0 +1,19 @@
+# Node.js
+node_modules/
+dist/
+build/
+.env
+
+# Vite cache
+.vite/
+.vitepress/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
